@@ -1,0 +1,7 @@
+<h1>Go Saml Example</h1>
+{{if .User }}
+    <p>Hello {{.User}}</p>
+    <p>You can go <b><a href="/private">here</a></b> or <b><a href="/logout">logout</a><b></p>
+{{else}}
+    <p>You can't go <b><a href="/private">here</a></b> unless you <b><a href="{{.AuthURL}}">login</a></b></p>
+{{end}}
