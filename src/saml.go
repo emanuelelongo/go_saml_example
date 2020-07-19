@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/gob"
 	"encoding/xml"
 	"fmt"
 	"io/ioutil"
@@ -28,11 +29,19 @@ type samlOptions struct {
 type samlOutput struct {
 	CallbackHandler func(w http.ResponseWriter, r *http.Request)
 	AuthURL         string
-	CheckAuth       func(r *http.Request) (string, error)
+	CheckAuth       func(r *http.Request) (*userInfo, error)
 	Logout          func(w http.ResponseWriter, r *http.Request)
 }
 
+type userInfo struct {
+	Name    string
+	Surname string
+	NameID  string
+	Email   string
+}
+
 func samlInit(options samlOptions) (samlOutput, error) {
+	gob.Register(userInfo{})
 	var store = sessions.NewCookieStore([]byte(options.CookieSecret))
 
 	metadataURL := fmt.Sprintf("https://login.microsoftonline.com/%s/federationmetadata/2007-06/federationmetadata.xml?appid=%s", options.TenantID, options.AppID)
@@ -74,7 +83,6 @@ func samlInit(options samlOptions) (samlOutput, error) {
 			certStore.Roots = append(certStore.Roots, idpCert)
 		}
 	}
-	randomKeyStore := dsig.RandomKeyStoreForTest()
 
 	sp := &saml2.SAMLServiceProvider{
 		IdentityProviderSSOURL:      metadata.IDPSSODescriptor.SingleSignOnServices[0].Location,
@@ -84,7 +92,6 @@ func samlInit(options samlOptions) (samlOutput, error) {
 		SignAuthnRequests:           false,
 		AudienceURI:                 options.AppIDURI,
 		IDPCertificateStore:         &certStore,
-		SPKeyStore:                  randomKeyStore,
 	}
 	authURL, err := sp.BuildAuthURL("")
 	if err != nil {
@@ -109,7 +116,14 @@ func samlInit(options samlOptions) (samlOutput, error) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		session.Values["user"] = assertionInfo.NameID
+
+		user := &userInfo{
+			Name:    assertionInfo.Values.Get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname"),
+			Surname: assertionInfo.Values.Get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname"),
+			Email:   assertionInfo.Values.Get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"),
+			NameID:  assertionInfo.NameID,
+		}
+		session.Values["user"] = user
 		err = session.Save(r, w)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -118,16 +132,17 @@ func samlInit(options samlOptions) (samlOutput, error) {
 		http.Redirect(w, r, options.OnLoginRedirectPath, 302)
 	}
 
-	checkAuth := func(r *http.Request) (string, error) {
+	checkAuth := func(r *http.Request) (*userInfo, error) {
 		session, err := store.Get(r, options.CookieName)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		user := ""
+
 		if session.Values["user"] != nil {
-			user = session.Values["user"].(string)
+			user := session.Values["user"].(userInfo)
+			return &user, nil
 		}
-		return user, nil
+		return nil, nil
 	}
 
 	logout := func(w http.ResponseWriter, r *http.Request) {

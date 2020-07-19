@@ -35,9 +35,14 @@ func main() {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		user, _ := saml.CheckAuth(r)
+		email := ""
+		if user != nil {
+			email = user.Email
+		}
+		fmt.Println(user)
 
 		data := homePageData{
-			User:    user,
+			User:    email,
 			AuthURL: saml.AuthURL,
 		}
 		homePage.Execute(w, data)
@@ -45,7 +50,7 @@ func main() {
 
 	http.HandleFunc("/private", func(w http.ResponseWriter, r *http.Request) {
 		user, _ := saml.CheckAuth(r)
-		if user == "" {
+		if user == nil {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
