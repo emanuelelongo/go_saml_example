@@ -39,7 +39,6 @@ func main() {
 		if user != nil {
 			email = user.Email
 		}
-		fmt.Println(user)
 
 		data := homePageData{
 			User:    email,
@@ -48,14 +47,9 @@ func main() {
 		homePage.Execute(w, data)
 	})
 
-	http.HandleFunc("/private", func(w http.ResponseWriter, r *http.Request) {
-		user, _ := saml.CheckAuth(r)
-		if user == nil {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			return
-		}
+	http.HandleFunc("/private", saml.WithAuth(func(w http.ResponseWriter, r *http.Request) {
 		privatePage.Execute(w, nil)
-	})
+	}))
 
 	fmt.Println("Listening on port 9090")
 	log.Fatal(http.ListenAndServeTLS(":9090", "src/cert/localhost.cert", "src/cert/localhost.key", nil))

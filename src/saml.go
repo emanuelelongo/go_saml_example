@@ -30,14 +30,15 @@ type samlOutput struct {
 	CallbackHandler func(w http.ResponseWriter, r *http.Request)
 	AuthURL         string
 	CheckAuth       func(r *http.Request) (*userInfo, error)
+	WithAuth        func(handler func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request)
 	Logout          func(w http.ResponseWriter, r *http.Request)
 }
 
 type userInfo struct {
-	Name    string
-	Surname string
-	NameID  string
-	Email   string
+	Name    string `json:"name"`
+	Surname string `json:"surname"`
+	NameID  string `json:"id"`
+	Email   string `json:"email"`
 }
 
 func samlInit(options samlOptions) (samlOutput, error) {
@@ -145,6 +146,21 @@ func samlInit(options samlOptions) (samlOutput, error) {
 		return nil, nil
 	}
 
+	withAuth := func(handler func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
+		return func(w http.ResponseWriter, r *http.Request) {
+			user, err := checkAuth(r)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if user == nil {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			handler(w, r)
+		}
+	}
+
 	logout := func(w http.ResponseWriter, r *http.Request) {
 		session, _ := store.Get(r, options.CookieName)
 		session.Values["user"] = nil
@@ -156,6 +172,7 @@ func samlInit(options samlOptions) (samlOutput, error) {
 		CallbackHandler: callbackHandler,
 		AuthURL:         authURL,
 		CheckAuth:       checkAuth,
+		WithAuth:        withAuth,
 		Logout:          logout,
 	}, nil
 }
