@@ -48,7 +48,8 @@ func main() {
 	})
 
 	http.HandleFunc("/private", saml.WithAuth(func(w http.ResponseWriter, r *http.Request) {
-		privatePage.Execute(w, nil)
+		user := r.Context().Value(userKey).(userInfo)
+		privatePage.Execute(w, user)
 	}))
 
 	fmt.Println("Listening on port 9090")

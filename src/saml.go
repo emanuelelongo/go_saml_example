@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/gob"
@@ -41,8 +42,15 @@ type userInfo struct {
 	Email   string `json:"email"`
 }
 
+type key int
+
+const (
+	userKey key = iota
+)
+
 func samlInit(options samlOptions) (samlOutput, error) {
 	gob.Register(userInfo{})
+	gob.Register(userKey)
 	var store = sessions.NewCookieStore([]byte(options.CookieSecret))
 
 	metadataURL := fmt.Sprintf("https://login.microsoftonline.com/%s/federationmetadata/2007-06/federationmetadata.xml?appid=%s", options.TenantID, options.AppID)
@@ -124,7 +132,7 @@ func samlInit(options samlOptions) (samlOutput, error) {
 			Email:   assertionInfo.Values.Get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"),
 			NameID:  assertionInfo.NameID,
 		}
-		session.Values["user"] = user
+		session.Values[userKey] = user
 		err = session.Save(r, w)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -139,8 +147,8 @@ func samlInit(options samlOptions) (samlOutput, error) {
 			return nil, err
 		}
 
-		if session.Values["user"] != nil {
-			user := session.Values["user"].(userInfo)
+		if session.Values[userKey] != nil {
+			user := session.Values[userKey].(userInfo)
 			return &user, nil
 		}
 		return nil, nil
@@ -157,13 +165,14 @@ func samlInit(options samlOptions) (samlOutput, error) {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
-			handler(w, r)
+			ctx := context.WithValue(r.Context(), userKey, *user)
+			handler(w, r.WithContext(ctx))
 		}
 	}
 
 	logout := func(w http.ResponseWriter, r *http.Request) {
 		session, _ := store.Get(r, options.CookieName)
-		session.Values["user"] = nil
+		session.Values[userKey] = nil
 		err = session.Save(r, w)
 		http.Redirect(w, r, options.OnLogoutRedirectPath, 302)
 	}
